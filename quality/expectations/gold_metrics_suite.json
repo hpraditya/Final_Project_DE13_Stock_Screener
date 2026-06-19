@@ -1,0 +1,74 @@
+{
+  "expectation_suite_name": "gold_metrics_suite",
+  "expectations": [
+    {
+      "expectation_type": "expect_table_row_count_to_be_between",
+      "kwargs": { "min_value": 1 },
+      "meta": { "notes": "At least 1 company must have been screened" }
+    },
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": { "column": "ticker" }
+    },
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": { "column": "status" }
+    },
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": { "column": "criteria_passed" }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_in_set",
+      "kwargs": { "column": "status", "value_set": ["LOLOS", "TIDAK"] }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": { "column": "criteria_passed", "min_value": 0, "max_value": 7 }
+    },
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": {
+        "column": "roe",
+        "mostly": 0.5
+      },
+      "meta": { "notes": "ROE can be null if total_equity is 0 or data missing; 50% is realistic floor" }
+    },
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": {
+        "column": "der",
+        "mostly": 0.5
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": {
+        "column": "fcf",
+        "mostly": 0.5
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": {
+        "column": "roe",
+        "min_value": -5.0,
+        "max_value": 10.0,
+        "mostly": 0.9
+      },
+      "meta": { "notes": "Allows extreme outliers (e.g., tiny equity base); original -1/2 was too narrow" }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": {
+        "column": "der",
+        "min_value": 0,
+        "mostly": 0.9
+      }
+    },
+    {
+      "expectation_type": "expect_compound_columns_to_be_unique",
+      "kwargs": { "column_list": ["ticker", "run_date"] }
+    }
+  ]
+}

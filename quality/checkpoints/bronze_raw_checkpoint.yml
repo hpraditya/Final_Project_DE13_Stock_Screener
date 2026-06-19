@@ -1,0 +1,18 @@
+name: bronze_raw_checkpoint
+config_version: 1
+class_name: SimpleCheckpoint
+# Uses RuntimeDataConnector — DataFrames are passed at runtime via RuntimeBatchRequest.
+# The DAG gate task reads bronze Parquet via boto3 and validates in-memory,
+# so this checkpoint is kept as documentation and for future batch-based use.
+# Reference: github.com/greatexpectationslabs/ge_tutorials (RuntimeDataConnector pattern)
+validations:
+  - batch_request:
+      datasource_name: bronze_datasource
+      data_connector_name: runtime_data_connector
+      data_asset_name: financial_statements
+      runtime_parameters:
+        batch_data: ~       # Passed at runtime as a pandas DataFrame
+      batch_identifiers:
+        run_date: "2026-06-18"   # Updated each run
+        domain: financial_statements
+    expectation_suite_name: bronze_raw_suite

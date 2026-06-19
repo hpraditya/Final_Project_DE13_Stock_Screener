@@ -1,0 +1,154 @@
+# ---------------------------------------------------------------------------
+# Common Airflow service definition (anchor).
+# depends_on is intentionally NOT in this anchor — each service sets it
+# explicitly so the YAML merge does not silently drop airflow-init dependency.
+# ---------------------------------------------------------------------------
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  env_file: .env
+  environment:
+    # Airflow core
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "postgresql+psycopg2://pipeline:${POSTGRES_PASSWORD}@postgres/buffett_screener"
+    AIRFLOW__CORE__DEFAULT_TIMEZONE: Asia/Jakarta
+    AIRFLOW__CORE__FERNET_KEY: "${AIRFLOW__CORE__FERNET_KEY}"
+    AIRFLOW__WEBSERVER__SECRET_KEY: "${AIRFLOW__WEBSERVER__SECRET_KEY}"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+    # Python path so Airflow workers can import transform.* and extraction.*
+    PYTHONPATH: /opt/airflow
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/logs:/opt/airflow/logs
+    - ./airflow/plugins:/opt/airflow/plugins
+    - ./extraction:/opt/airflow/extraction
+    - ./transform:/opt/airflow/transform
+    # warehouse/ddl and warehouse/views are read by metrics_buffett.py to init the gold schema
+    - ./warehouse:/opt/airflow/warehouse
+    # Great Expectations context
+    - ./quality:/opt/airflow/quality
+
+services:
+
+  # -------------------------------------------------------------------------
+  # PostgreSQL — gold layer data warehouse
+  # -------------------------------------------------------------------------
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: buffett_screener
+      POSTGRES_USER: pipeline
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "pipeline", "-d", "buffett_screener"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # -------------------------------------------------------------------------
+  # SeaweedFS — distributed object storage (S3-compatible data lake)
+  # -------------------------------------------------------------------------
+  seaweedfs-master:
+    image: chrislusf/seaweedfs
+    command: master -mdir=/data
+    ports:
+      - "9333:9333"
+    volumes:
+      - seaweedfs_master:/data
+    healthcheck:
+      # The master exposes a /cluster/status JSON endpoint on port 9333
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9333/cluster/status 2>/dev/null | grep -qi 'IsLeader' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  seaweedfs-volume:
+    image: chrislusf/seaweedfs
+    command: volume -mserver=seaweedfs-master:9333 -dir=/data -port=8080
+    volumes:
+      - seaweedfs_volume:/data
+    depends_on:
+      seaweedfs-master:
+        condition: service_healthy
+
+  seaweedfs-filer:
+    image: chrislusf/seaweedfs
+    # -s3 enables the S3-compatible API on port 8333 (default)
+    command: filer -master=seaweedfs-master:9333 -s3
+    ports:
+      - "8333:8333"   # S3 API — used by boto3 and DuckDB httpfs
+      - "8888:8888"   # Filer HTTP management UI
+    volumes:
+      - seaweedfs_filer:/data
+      # filer.toml is auto-discovered at /etc/seaweedfs/filer.toml
+      - ./seaweedfs/config/filer.toml:/etc/seaweedfs/filer.toml:ro
+    depends_on:
+      seaweedfs-master:
+        condition: service_healthy
+      seaweedfs-volume:
+        condition: service_started
+    healthcheck:
+      # S3 ListBuckets on / returns XML when the filer S3 API is ready
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8333/ 2>/dev/null | grep -q '<?xml' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  # -------------------------------------------------------------------------
+  # Airflow services
+  # -------------------------------------------------------------------------
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate &&
+        airflow users create \
+          --username admin --password admin \
+          --firstname Admin --lastname User \
+          --role Admin --email admin@example.com || true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      seaweedfs-filer:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    depends_on:
+      postgres:
+        condition: service_healthy
+      seaweedfs-filer:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+# ---------------------------------------------------------------------------
+# Named volumes for data persistence across container restarts
+# ---------------------------------------------------------------------------
+volumes:
+  pg_data:
+  seaweedfs_master:
+  seaweedfs_volume:
+  seaweedfs_filer:

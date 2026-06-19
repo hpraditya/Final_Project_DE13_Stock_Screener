@@ -1,0 +1,61 @@
+{
+  "expectation_suite_name": "bronze_raw_suite",
+  "expectations": [
+    {
+      "expectation_type": "expect_table_columns_to_match_set",
+      "kwargs": {
+        "column_set": [
+          "ticker", "period", "revenue", "gross_profit", "net_income",
+          "total_assets", "total_equity", "total_debt",
+          "operating_cash_flow", "capex", "eps"
+        ],
+        "exact_match": false
+      },
+      "meta": { "notes": "exact_match=false allows run_date or extra columns added by transforms" }
+    },
+    {
+      "expectation_type": "expect_table_row_count_to_be_between",
+      "kwargs": { "min_value": 50, "max_value": 500 },
+      "meta": { "notes": "89 oil/gas/coal companies × 2 years cutoff = ~178 rows expected" }
+    },
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": { "column": "ticker" }
+    },
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": { "column": "period" }
+    },
+    {
+      "expectation_type": "expect_column_values_to_match_regex",
+      "kwargs": {
+        "column": "ticker",
+        "regex": "^[A-Z]{2,5}$"
+      },
+      "meta": { "notes": "IDX tickers are 2-5 uppercase letters; original ^[A-Z]{4}$ was too strict" }
+    },
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": {
+        "column": "net_income",
+        "mostly": 0.7
+      },
+      "meta": { "notes": "Some companies may not have reported yet; 70% threshold is realistic" }
+    },
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": {
+        "column": "total_equity",
+        "mostly": 0.7
+      },
+      "meta": { "notes": "Same as net_income — partial null is acceptable for IDX data" }
+    },
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": {
+        "column": "revenue",
+        "mostly": 0.6
+      }
+    }
+  ]
+}

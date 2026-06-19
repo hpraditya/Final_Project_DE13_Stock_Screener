@@ -1,0 +1,6 @@
+# Pipeline dependencies not bundled in apache/airflow:2.9.0
+boto3>=1.34.0,<2.0
+duckdb>=1.0.0,<2.0
+great-expectations>=0.18.0,<1.0
+psycopg2-binary>=2.9.0
+python-dotenv>=1.0.0

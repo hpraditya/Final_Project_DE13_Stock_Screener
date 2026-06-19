@@ -1,0 +1,15 @@
+name: gold_metrics_checkpoint
+config_version: 1
+class_name: SimpleCheckpoint
+# Uses RuntimeDataConnector — DataFrame is read from PostgreSQL and passed in-memory.
+# Reference: github.com/greatexpectationslabs/ge_tutorials (RuntimeDataConnector pattern)
+validations:
+  - batch_request:
+      datasource_name: gold_datasource
+      data_connector_name: runtime_data_connector
+      data_asset_name: fct_buffett_screening
+      runtime_parameters:
+        batch_data: ~       # Passed at runtime as a pandas DataFrame
+      batch_identifiers:
+        run_date: "2026-06-18"   # Updated each run
+    expectation_suite_name: gold_metrics_suite

@@ -1,0 +1,8 @@
+[filer.options]
+recursive_delete = false
+
+# LevelDB2 is the embedded metadata store used by the filer.
+# All metadata is persisted under /data which is a Docker named volume.
+[leveldb2]
+enabled = true
+dir     = "/data/filerldb2"

@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(docker exec data_pipeline_project_de13-airflow-webserver-1 pip install pytest boto3 duckdb pyarrow 2>&1)",
+      "PowerShell(docker run --rm python:3.11-slim python -c \"from cryptography.fernet import Fernet; print\\(Fernet.generate_key\\(\\).decode\\(\\)\\)\")",
+      "PowerShell(docker run --rm python:3.11-slim python -c \"import base64, os; print\\(base64.urlsafe_b64encode\\(os.urandom\\(32\\)\\).decode\\(\\)\\)\")",
+      "PowerShell(cd \"d:\\\\Data_Pipeline_Project_DE13\" && docker run --rm -v \"${PWD}:/app\" -w /app python:3.11-slim sh -c \"pip install pytest requests pandas boto3 duckdb pyarrow -q 2>&1 && python -m pytest tests/ -v 2>&1\")",
+      "PowerShell(docker exec data_pipeline_project_de13-airflow-webserver-1 airflow dags list 2>&1)",
+      "PowerShell(docker exec data_pipeline_project_de13-airflow-webserver-1 airflow dags trigger warren_buffett_screener --run-id manual_run_20260618 2>&1)",
+      "PowerShell(docker exec data_pipeline_project_de13-airflow-webserver-1 airflow tasks states-for-dag-run warren_buffett_screener manual_run_20260618 2>&1)",
+      "PowerShell(docker exec data_pipeline_project_de13-airflow-webserver-1 airflow tasks logs warren_buffett_screener extract_company_profile manual_run_20260618 2>&1)",
+      "PowerShell(head -20)",
+      "WebFetch(domain:docs.sectors.app)",
+      "PowerShell(docker exec data_pipeline_project_de13-airflow-webserver-1 python /opt/airflow/extraction/../test_v2.py 2>&1; echo \"exit:$LASTEXITCODE\")",
+      "PowerShell(docker exec data_pipeline_project_de13-airflow-webserver-1 python /opt/airflow/test_v2.py 2>&1)",
+      "PowerShell(docker exec data_pipeline_project_de13-airflow-webserver-1 ls /opt/airflow/ 2>&1)",
+      "PowerShell(docker exec data_pipeline_project_de13-airflow-webserver-1 airflow dags trigger warren_buffett_screener --run-id manual_run_v2_test 2>&1)",
+      "Bash(docker exec *)",
+      "WebSearch"
+    ]
+  }
+}

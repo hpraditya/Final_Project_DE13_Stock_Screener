@@ -1,0 +1,10 @@
+.env
+airflow/logs/
+*.pyc
+__pycache__/
+.ipynb_checkpoints/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage

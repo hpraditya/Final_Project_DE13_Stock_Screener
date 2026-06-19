@@ -1,0 +1,34 @@
+-- ============================================================
+-- OBSOLETE — This file is no longer used by the pipeline.
+-- ============================================================
+-- The join + insert logic has been moved into metrics_buffett.py
+-- (Python, using psycopg2) so that:
+--   1. scoring.py can compute criteria_passed / status before insert
+--   2. DuckDB postgres extension is not required
+--   3. dim_company can be upserted in the same transaction
+--
+-- Kept here as documentation of the original SQL-first design intent.
+-- ============================================================
+
+-- Final screening result: JOIN all metrics + scoring
+-- INSERT INTO pg.gold.fct_buffett_screening
+-- SELECT
+--     p.ticker,
+--     p.company_name,
+--     p.sector,
+--     :run_date AS run_date,
+--     f.period,
+--     r.roe,  d.der,  fc.fcf,  fc.fcf_margin,
+--     g.eps_growth_yoy,  g.eps_cagr_5y,
+--     v.per,  v.pbv,  v.graham_combined,
+--     NULL AS criteria_passed,
+--     NULL AS status,
+--     CURRENT_TIMESTAMP AS loaded_at
+-- FROM silver_profile p
+-- JOIN silver_financials f ON p.ticker = f.ticker
+-- JOIN metrics_roe r ON p.ticker = r.ticker AND f.period = r.period
+-- JOIN metrics_der d ON p.ticker = d.ticker AND f.period = d.period
+-- JOIN metrics_fcf fc ON p.ticker = fc.ticker AND f.period = fc.period
+-- JOIN metrics_growth g ON p.ticker = g.ticker AND f.period = g.period
+-- JOIN metrics_valuation v ON p.ticker = v.ticker AND f.period = v.period
+-- WHERE f.run_date = :run_date;
