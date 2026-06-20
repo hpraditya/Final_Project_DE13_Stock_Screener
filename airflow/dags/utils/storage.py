@@ -2,6 +2,7 @@ import os
 import io
 import pandas as pd
 import boto3
+from botocore.exceptions import ClientError
 
 ENDPOINT   = os.environ["SEAWEEDFS_ENDPOINT"]
 ACCESS_KEY = os.environ["SEAWEEDFS_ACCESS_KEY"]
@@ -56,3 +57,20 @@ def read_parquet_from_silver(domain: str, run_date: str) -> pd.DataFrame:
     key = f"silver/{domain}/run_date={run_date}/data.parquet"
     obj = _s3_client().get_object(Bucket=BUCKET, Key=key)
     return pd.read_parquet(io.BytesIO(obj["Body"].read()))
+
+
+def has_bronze_data(domain: str) -> bool:
+    """Return True if any Parquet partition exists under bronze/{domain}/ in the data lake.
+
+    Returns False (not raises) when the bucket does not exist yet — this happens on
+    the very first pipeline run before any data has been written.
+    """
+    prefix = f"bronze/{domain}/"
+    try:
+        resp = _s3_client().list_objects_v2(Bucket=BUCKET, Prefix=prefix, MaxKeys=1)
+        return resp.get("KeyCount", 0) > 0
+    except ClientError as exc:
+        code = exc.response.get("Error", {}).get("Code", "")
+        if code in ("NoSuchBucket", "404"):
+            return False
+        raise

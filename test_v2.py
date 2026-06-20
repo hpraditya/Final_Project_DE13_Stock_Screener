@@ -22,7 +22,7 @@ print('  total:', total)
 print()
 print("=== company/report/BBCA/?sections=overview ===")
 report = client.fetch_company_report('BBCA', 'overview')
-rows = client._flatten_response('BBCA', 'overview', report)
+rows = client._flatten_response('BBCA', 'overview', report, cutoff_year=0)
 print(json.dumps(rows[0], indent=2, default=str))
 
 print()

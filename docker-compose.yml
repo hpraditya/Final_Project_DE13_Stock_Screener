@@ -61,8 +61,8 @@ services:
     volumes:
       - seaweedfs_master:/data
     healthcheck:
-      # The master exposes a /cluster/status JSON endpoint on port 9333
-      test: ["CMD-SHELL", "wget -qO- http://localhost:9333/cluster/status 2>/dev/null | grep -qi 'IsLeader' || exit 1"]
+      # SeaweedFS master binds to the container IP (not localhost); use hostname -i
+      test: ["CMD-SHELL", "wget -qO- http://$(hostname -i 2>/dev/null):9333/cluster/status 2>/dev/null | grep -q 'IsLeader' || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -94,8 +94,8 @@ services:
       seaweedfs-volume:
         condition: service_started
     healthcheck:
-      # S3 ListBuckets on / returns XML when the filer S3 API is ready
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8333/ 2>/dev/null | grep -q '<?xml' || exit 1"]
+      # SeaweedFS filer binds to container IP (not localhost); use hostname -i
+      test: ["CMD-SHELL", "wget -qO- http://$(hostname -i 2>/dev/null):8333/ 2>/dev/null | grep -q '<?xml' || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 30

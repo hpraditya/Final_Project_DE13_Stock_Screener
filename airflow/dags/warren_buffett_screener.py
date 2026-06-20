@@ -10,16 +10,9 @@ import pandas as pd
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
-from utils.sector_client import extract_domain
+from utils.sector_client import extract_fundamentals
 
 logger = logging.getLogger(__name__)
-
-SECTOR_DOMAINS = [
-    "company_profile",
-    "financial_statements",
-    "valuation_ratios",
-    "daily_prices",
-]
 
 default_args = {
     "owner": "data-engineering",
@@ -85,6 +78,101 @@ def _validate_with_ge(df: pd.DataFrame, suite_name: str, label: str) -> None:
             f"[{label}] Data quality FAILED — {len(failures)} expectation(s):\n"
             + "\n".join(failures)
         )
+
+
+# ---------------------------------------------------------------------------
+# Extract: Daily Prices (smart backfill)
+# ---------------------------------------------------------------------------
+def run_extract_prices(**context) -> None:
+    """
+    Idempotent monthly closing price ingestion (last Friday of each month only).
+
+    Schedule: runs every Friday (`0 10 * * 5`) but only processes data when
+    run_date is the last Friday of its calendar month. Other Fridays are skipped.
+
+    First run (no data under bronze/daily_prices/ in the lake):
+        Backfill last-Friday-of-month closes for current year + 1 year back
+        (~24 partitions). One Parquet partition per date.
+
+    Subsequent runs (history already exists):
+        Fetch prices for run_date only if it is the last Friday of the month;
+        otherwise log and return early (no API calls, no write).
+
+    If the Sectors API does not respond within 30 seconds, ingestion is stopped
+    immediately (AirflowFailException — no retries), a log entry is written, and
+    a Slack alert is sent via SLACK_WEBHOOK_URL.
+    """
+    try:
+        from airflow.exceptions import AirflowFailException  # type: ignore[import]
+    except ImportError:
+        AirflowFailException = RuntimeError  # type: ignore[assignment,misc]
+    from extraction.client import SectorClient, APITimeoutError
+    from utils.storage import has_bronze_data, write_parquet_to_bronze
+    from utils.notify import send_slack_alert
+
+    run_date: str = context["ds"]
+
+    try:
+        client = SectorClient(api_key=os.environ["SECTOR_API_KEY"])
+
+        if not has_bronze_data("daily_prices"):
+            # First run — backfill last Friday of each month for current year + 1 year back
+            logger.info(
+                "No price history in data lake — running monthly last-Friday backfill [run_date=%s]",
+                run_date,
+            )
+            tickers = client._fetch_ticker_list()
+            if not tickers:
+                raise RuntimeError("Ticker list empty — check SECTOR_API_KEY and /v2/companies/")
+            friday_data = client._fetch_friday_prices_history(tickers, run_date, years_back=1)
+            if not friday_data:
+                logger.warning("Backfill returned no data; skipping write")
+                return
+            for friday_date, df in sorted(friday_data.items()):
+                write_parquet_to_bronze(df, "daily_prices", friday_date)
+                logger.info("Backfill: %s — %d rows written", friday_date, len(df))
+            logger.info("Price backfill complete: %d monthly partitions", len(friday_data))
+
+        else:
+            # Incremental — only process on last Friday of the month
+            if not client._is_last_friday_of_month(run_date):
+                logger.info(
+                    "Skipping extract_prices — %s is not the last Friday of its month", run_date
+                )
+                return
+
+            logger.info(
+                "Last Friday of month detected — incremental fetch [run_date=%s]", run_date
+            )
+            tickers = client._fetch_ticker_list()
+            if not tickers:
+                raise RuntimeError("Ticker list empty — check SECTOR_API_KEY and /v2/companies/")
+            df = client._fetch_daily_prices_all(tickers, run_date)
+            if df.empty:
+                logger.warning(
+                    "No price data returned for run_date=%s; skipping write", run_date
+                )
+                return
+            write_parquet_to_bronze(df, "daily_prices", run_date)
+            logger.info("Incremental prices: %d rows written for %s", len(df), run_date)
+
+    except APITimeoutError as exc:
+        msg = (
+            f"Ingestion dihentikan — API timeout setelah 30 detik "
+            f"[task=extract_prices, run_date={run_date}]: {exc}"
+        )
+        logger.error(msg)
+        send_slack_alert(
+            title="🚨 Price Ingestion Timeout — Pipeline Dihentikan",
+            details={
+                "DAG": "warren_buffett_screener",
+                "Task": "extract_prices",
+                "Run date": run_date,
+                "Error": str(exc),
+                "Action": "Ingestion dihentikan. Periksa status API Sectors.",
+            },
+        )
+        raise AirflowFailException(msg) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -218,20 +306,26 @@ def run_load_warehouse(**context) -> None:
 with DAG(
     dag_id="warren_buffett_screener",
     default_args=default_args,
-    schedule="0 10 * * 5",   # Every Friday 17:00 WIB = 10:00 UTC
+    schedule="0 10 * * 5",   # Every Friday 17:00 WIB = 10:00 UTC; price task self-skips on non-last-Fridays
     start_date=datetime(2025, 1, 1),
     catchup=False,
     tags=["buffett", "idx", "screening"],
 ) as dag:
 
-    extract_tasks = [
-        PythonOperator(
-            task_id=f"extract_{domain}",
-            python_callable=extract_domain,
-            op_kwargs={"domain": domain},
-        )
-        for domain in SECTOR_DOMAINS
-    ]
+    # Single task: fetches ticker list once, runs 3 domains sequentially.
+    # Replaces 3 parallel tasks — cuts ticker-list calls from 3→1 and peak
+    # request rate from ~480 req/min to ~120 req/min (avoids 429 bursts).
+    extract_fundamentals_task = PythonOperator(
+        task_id="extract_fundamentals",
+        python_callable=extract_fundamentals,
+    )
+
+    # Price ingestion — independent of the fundamental screening pipeline.
+    # On first run: 2-year Friday backfill. On subsequent runs: incremental.
+    extract_prices = PythonOperator(
+        task_id="extract_prices",
+        python_callable=run_extract_prices,
+    )
 
     gate_bronze = PythonOperator(
         task_id="gate_bronze",
@@ -258,4 +352,7 @@ with DAG(
         python_callable=run_load_warehouse,
     )
 
-    extract_tasks >> gate_bronze >> transform_silver >> transform_gold >> gate_gold >> load_warehouse
+    # Screening pipeline: fundamentals → validate → transform → score → verify → load
+    _ = extract_fundamentals_task >> gate_bronze >> transform_silver >> transform_gold >> gate_gold >> load_warehouse
+
+    # extract_prices runs independently — auto-registered via DAG context manager.

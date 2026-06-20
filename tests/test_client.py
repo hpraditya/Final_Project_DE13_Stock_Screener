@@ -21,11 +21,11 @@ def client():
 # _cutoff_year
 # ---------------------------------------------------------------------------
 
-def test_cutoff_year_is_run_year_minus_2(client):
-    """Must return run_year - 2 to allow YoY EPS growth computation."""
-    assert client._cutoff_year("2026-06-18") == 2024
-    assert client._cutoff_year("2025-01-01") == 2023
-    assert client._cutoff_year("2024-12-31") == 2022
+def test_cutoff_year_is_run_year_minus_1(client):
+    """Must return run_year - 1: tahun berjalan + 1 tahun ke belakang."""
+    assert client._cutoff_year("2026-06-18") == 2025
+    assert client._cutoff_year("2025-01-01") == 2024
+    assert client._cutoff_year("2024-12-31") == 2023
 
 
 # ---------------------------------------------------------------------------
@@ -178,6 +178,7 @@ def test_flatten_valuation_excludes_years_before_cutoff(client):
 def test_fetch_company_report_strips_jk_suffix(client):
     """Ticker with .JK suffix must be stripped before the URL is built."""
     mock_resp = MagicMock()
+    mock_resp.status_code = 200
     mock_resp.json.return_value = {}
     mock_resp.raise_for_status.return_value = None
 
@@ -192,6 +193,7 @@ def test_fetch_company_report_strips_jk_suffix(client):
 def test_fetch_company_report_raises_on_http_error(client):
     """HTTP errors must propagate so Airflow retries the task."""
     mock_resp = MagicMock()
+    mock_resp.status_code = 500
     mock_resp.raise_for_status.side_effect = Exception("500 Server Error")
 
     with patch.object(client.session, "get", return_value=mock_resp):
@@ -210,6 +212,7 @@ def test_fetch_ticker_list_stops_when_no_next_page(client):
         "pagination": {"has_next": False, "total_count": 2, "showing": 2},
     }
     mock_resp = MagicMock()
+    mock_resp.status_code = 200
     mock_resp.json.return_value = page1
     mock_resp.raise_for_status.return_value = None
 
@@ -230,6 +233,7 @@ def test_fetch_ticker_list_paginates_through_all_pages(client):
         "pagination": {"has_next": False},
     }
     mock_resp = MagicMock()
+    mock_resp.status_code = 200
     mock_resp.json.side_effect = [page1, page2]
     mock_resp.raise_for_status.return_value = None
 
